@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kernel Lift</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Spline+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: instrument-bench split. Control sheet on the left, the 3D lifted space fills the rest; stacks on phones. */
+:root {
+  --bg: #0f1620;
+  --panel: #172130;
+  --raise: #1e2a3b;
+  --line: #2b3a4d;
+  --text: #e4ebf2;
+  --muted: #92a3b5;
+  --a: #ef8a62;      /* class A */
+  --b: #63b4d1;      /* class B */
+  --plane: #e9c46a;  /* separating plane, accent */
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Spline Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "Spline Sans Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--body); font-size: 14px; line-height: 1.5;
+  box-sizing: border-box;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+*, *::before, *::after { box-sizing: border-box; }
+.app { height: 100%; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; }
+.panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 18px; overflow-y: auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.eyebrow { font: 500 11px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
+h1 { font: 700 34px/1 var(--display); margin: 6px 0 8px; letter-spacing: -.01em; text-wrap: balance; }
+h1 span { color: var(--plane); }
+.lede { margin: 0; color: var(--muted); max-width: 60ch; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.label { font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
+.label output { color: var(--text); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button {
+  font: 500 13px var(--body); color: var(--text); background: var(--raise);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+}
+.seg button:hover { border-color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--plane); color: #1a1406; border-color: var(--plane); }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--plane); outline-offset: 2px; }
+.formula { font: 400 13px/1.4 var(--mono); color: var(--plane); margin: 2px 0 0; }
+.note { margin: 0; color: var(--muted); font-size: 13px; }
+input[type="range"] { width: 100%; accent-color: var(--plane); }
+.row { display: flex; gap: 8px; align-items: center; }
+.play {
+  font: 600 13px var(--body); background: transparent; color: var(--plane);
+  border: 1px solid var(--plane); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
+}
+.play:hover { background: rgba(233,196,106,.12); }
+.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.check input { accent-color: var(--plane); width: 16px; height: 16px; }
+.readout { background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.stat { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: baseline; }
+.stat .name { color: var(--muted); font-size: 13px; }
+.stat .val { font: 600 20px var(--display); font-variant-numeric: tabular-nums; }
+.bar { grid-column: 1 / -1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--muted); transition: width .25s; }
+.bar.lift i { background: var(--plane); }
+.verdict { margin: 0; font-size: 13px; }
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { color: var(--muted); font-size: 13px; margin: 8px 0 0; max-width: 62ch; }
+details p strong { color: var(--text); font-weight: 600; }
+.stage { position: relative; min-width: 0; min-height: 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.legend {
+  position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px;
+  font: 500 12px var(--body); background: rgba(15,22,32,.78); border: 1px solid var(--line);
+  padding: 6px 10px; border-radius: 8px; pointer-events: none;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.sw { width: 16px; height: 8px; border-radius: 2px; background: var(--plane); opacity: .7; display: inline-block; }
+.hint { position: absolute; left: 12px; bottom: 12px; font: 400 12px var(--mono); color: var(--muted); pointer-events: none; }
+.vrbox { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: min(320px, 70%); }
+.vrbtn { font: 700 14px var(--display); background: var(--plane); color: #1a1406; border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
+.vrmsg { font-size: 12px; color: var(--muted); text-align: right; background: rgba(15,22,32,.78); padding: 4px 8px; border-radius: 6px; }
+.vrmsg:empty { display: none; }
+@media (max-width: 760px) {
+  html, body { height: auto; }
+  .app { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .stage { order: -1; height: 58vh; min-height: 320px; }
+  .hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Controls">
+    <header>
+      <p class="eyebrow">Classical ML · kernel methods</p>
+      <h1>Kernel <span>Lift</span></h1>
+      <p class="lede">No straight line splits these points on the floor. Add one coordinate, lift them, and a flat plane may cut cleanly. That cut, read back on the floor, is a curve.</p>
+    </header>
+
+    <div class="group">
+      <div class="label">Data</div>
+      <div class="seg" id="dataSeg">
+        <button type="button" data-v="rings">Rings</button>
+        <button type="button" data-v="xor">XOR</button>
+        <button type="button" data-v="island">Island</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Feature map</div>
+      <div class="seg" id="mapSeg">
+        <button type="button" data-v="none">None</button>
+        <button type="button" data-v="radius">x₁² + x₂²</button>
+        <button type="button" data-v="product">x₁x₂</button>
+        <button type="button" data-v="rbf">RBF bump</button>
+      </div>
+      <p class="formula" id="formula"></p>
+      <p class="note" id="mapNote"></p>
+    </div>
+
+    <div class="group" id="gammaRow">
+      <label class="label" for="gamma">Bump width γ <output id="gammaOut"></output></label>
+      <input type="range" id="gamma" min="0.5" max="8" step="0.1" value="3">
+      <p class="note">Click the floor to move the landmark c.</p>
+    </div>
+
+    <div class="group">
+      <label class="label" for="lift">Lift <output id="liftOut"></output></label>
+      <div class="row">
+        <input type="range" id="lift" min="0" max="100" step="1" value="100">
+        <button type="button" class="play" id="play">Lower it</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label class="label" for="noise">Noise <output id="noiseOut"></output></label>
+      <input type="range" id="noise" min="0" max="30" step="1" value="5">
+    </div>
+
+    <div class="group">
+      <div class="label">View</div>
+      <label class="check"><input type="checkbox" id="hide"> Hide the plane (predict first)</label>
+      <label class="check"><input type="checkbox" id="surface" checked> Show the map surface</label>
+    </div>
+
+    <div class="readout" aria-live="polite">
+      <div class="stat">
+        <span class="name">Linear model, flat floor</span><span class="val" id="flatAcc">–</span>
+        <div class="bar"><i id="flatBar"></i></div>
+      </div>
+      <div class="stat">
+        <span class="name">Linear model, lifted space</span><span class="val" id="liftAcc">–</span>
+        <div class="bar lift"><i id="liftBar"></i></div>
+      </div>
+      <p class="verdict" id="verdict"></p>
+    </div>
+
+    <details>
+      <summary>What the kernel trick adds</summary>
+      <p>Here the extra coordinate is built by hand and the plane is fitted by logistic regression on the lifted points. An SVM never builds φ at all. It only needs dot products between points, and a kernel returns φ(x)·φ(z) straight from the original coordinates.</p>
+      <p>Real kernels add many coordinates at once (the RBF kernel's feature space is infinite-dimensional), so treat the 3D picture as an intuition aid rather than the full story.</p>
+      <p><strong>Classroom prompt.</strong> Before lifting, predict which map separates each dataset. Then lift, check, and explain why the plane's slice through the surface traces the boundary on the floor.</p>
+    </details>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div class="legend">
+      <span><i class="dot" style="background:var(--a)"></i>Class A</span>
+      <span><i class="dot" style="background:var(--b)"></i>Class B</span>
+      <span><i class="sw"></i>Separating plane</span>
+    </div>
+    <div class="hint">Drag to orbit · scroll to zoom</div>
+    <div class="vrbox">
+      <button type="button" class="vrbtn" id="vrBtn" hidden>Enter VR</button>
+      <span class="vrmsg" id="vrMsg"></span>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  const $ = s => document.querySelector(s);
+  const R = 1.8, HMAX = 1.6, N = 240;
+  const COL = { bg: 0x0f1620, floor: [27, 38, 51], grid: [40, 54, 70], a: [239, 138, 98], b: [99, 180, 209], plane: [233, 196, 106] };
+
+  const state = { data: 'rings', map: 'radius', t: 1, noise: 0.05, gamma: 3, lm: [0, 0], hide: false, surface: true, anim: null };
+  const DATA_LM = { rings: [0, 0], xor: [0, 0], island: [0.55, 0.35] };
+
+  const MAPS = {
+    none:    { f: () => 0, formula: 'φ(x) = (x₁, x₂)', note: 'No extra coordinate. A linear model can only draw a straight line on the floor.' },
+    radius:  { f: (x, y) => x * x + y * y, formula: 'φ(x) = (x₁, x₂, x₁² + x₂²)', note: 'Height grows with distance from the origin. These terms sit inside the polynomial kernel K(x, z) = (x·z + 1)².' },
+    product: { f: (x, y) => x * y, formula: 'φ(x) = (x₁, x₂, x₁x₂)', note: 'The cross term, also inside (x·z + 1)². Opposite quadrants rise and fall.' },
+    rbf:     { f: (x, y) => Math.exp(-state.gamma * ((x - state.lm[0]) ** 2 + (y - state.lm[1]) ** 2)), formula: 'φ(x) = (x₁, x₂, exp(−γ‖x − c‖²))', note: 'One Gaussian bump at landmark c. The full RBF kernel K(x, z) = exp(−γ‖x − z‖²) effectively centres a bump on every training point.' }
+  };
+  const MAP_ORDER = ['none', 'radius', 'product', 'rbf'], DATA_ORDER = ['rings', 'xor', 'island'];
+  const NAMES = { rings: 'Rings', xor: 'XOR', island: 'Island', none: 'None', radius: 'x1² + x2²', product: 'x1·x2', rbf: 'RBF bump' };
+
+  /* ---------- data ---------- */
+  function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+  function makeBase(kind) {
+    const r = rng({ rings: 11, xor: 23, island: 37 }[kind]), pts = [];
+    if (kind === 'rings') {
+      for (let i = 0; i < N; i++) { const lab = i % 2 ? 1 : -1, a = r() * Math.PI * 2, rad = lab > 0 ? 0.5 + 0.07 * gauss(r) : 1.2 + 0.08 * gauss(r); pts.push({ x: rad * Math.cos(a), y: rad * Math.sin(a), lab }); }
+    } else if (kind === 'xor') {
+      while (pts.length < N) { const x = (r() * 2 - 1) * 1.4, y = (r() * 2 - 1) * 1.4; if (Math.abs(x) < 0.15 || Math.abs(y) < 0.15) continue; pts.push({ x, y, lab: x * y > 0 ? 1 : -1 }); }
+    } else {
+      const c = DATA_LM.island;
+      for (let i = 0; i < 80; i++) pts.push({ x: c[0] + 0.2 * gauss(r), y: c[1] + 0.2 * gauss(r), lab: 1 });
+      while (pts.length < N) { const x = (r() * 2 - 1) * 1.45, y = (r() * 2 - 1) * 1.45; if (Math.hypot(x - c[0], y - c[1]) < 0.62) continue; pts.push({ x, y, lab: -1 }); }
+    }
+    pts.forEach(p => { p.jx = gauss(r); p.jy = gauss(r); });
+    return pts;
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  let base = {}, pts = [], range = { min: 0, max: 1 };
+  function buildPoints() {
+    if (!base[state.data]) base[state.data] = makeBase(state.data);
+    pts = base[state.data].map(p => ({ x: clamp(p.x + state.noise * p.jx, -R + 0.05, R - 0.05), y: clamp(p.y + state.noise * p.jy, -R + 0.05, R - 0.05), lab: p.lab }));
+  }
+  function computeRange() {
+    const f = MAPS[state.map].f; let mn = Infinity, mx = -Infinity;
+    for (const p of pts) { const v = f(p.x, p.y); if (v < mn) mn = v; if (v > mx) mx = v; }
+    range = { min: mn, max: mx };
+  }
+  function H(x, y, t) {
+    if (state.map === 'none') return 0;
+    const span = (range.max - range.min) || 1;
+    return t * HMAX * (MAPS[state.map].f(x, y) - range.min) / span;
+  }
+
+  /* ---------- logistic regression on (x, height, y) ---------- */
+  function fit(t) {
+    const n = pts.length, F = [];
+    for (const p of pts) F.push([p.x, H(p.x, p.y, t), p.y]);
+    const mu = [0, 0, 0], sd = [0, 0, 0];
+    for (const f of F) for (let k = 0; k < 3; k++) mu[k] += f[k] / n;
+    for (const f of F) for (let k = 0; k < 3; k++) sd[k] += (f[k] - mu[k]) ** 2 / n;
+    for (let k = 0; k < 3; k++) sd[k] = Math.sqrt(sd[k]);
+    const S = F.map(f => f.map((v, k) => sd[k] > 1e-6 ? (v - mu[k]) / sd[k] : 0));
+    let w = [0, 0, 0], b = 0; const lr = 0.6, lam = 1e-3;
+    for (let it = 0; it < 500; it++) {
+      const g = [0, 0, 0]; let gb = 0;
+      for (let i = 0; i < n; i++) {
+        const y = pts[i].lab, s = w[0] * S[i][0] + w[1] * S[i][1] + w[2] * S[i][2] + b;
+        const c = -y / (1 + Math.exp(y * s));
+        g[0] += c * S[i][0]; g[1] += c * S[i][1]; g[2] += c * S[i][2]; gb += c;
+      }
+      for (let k = 0; k < 3; k++) w[k] -= lr * (g[k] / n + lam * w[k]);
+      b -= lr * gb / n;
+    }
+    const wr = w.map((v, k) => sd[k] > 1e-6 ? v / sd[k] : 0);
+    const br = b - wr.reduce((a, v, k) => a + v * mu[k], 0);
+    let ok = 0;
+    for (let i = 0; i < n; i++) { const s = wr[0] * F[i][0] + wr[1] * F[i][1] + wr[2] * F[i][2] + br; if ((s >= 0 ? 1 : -1) === pts[i].lab) ok++; }
+    return { w: wr, b: br, acc: ok / n };
+  }
+
+  /* ---------- scene ---------- */
+  const stage = $('#stage');
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.localClippingEnabled = true;
+  renderer.xr.enabled = true;
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(COL.bg);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
+  camera.position.set(3.5, 3.1, 4.0);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.55, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.update();
+  scene.add(new THREE.HemisphereLight(0xdfe9f5, 0x1a2230, 0.95));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(3, 6, 2); scene.add(sun);
+
+  const world = new THREE.Group(); scene.add(world);
+  const localClips = [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), R), new THREE.Plane(new THREE.Vector3(-1, 0, 0), R),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), R), new THREE.Plane(new THREE.Vector3(0, 0, -1), R),
+    new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.01), new THREE.Plane(new THREE.Vector3(0, -1, 0), HMAX + 0.2)
+  ];
+  const clips = localClips.map(p => p.clone());
+
+  const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2 * R, HMAX + 0.2, 2 * R)), new THREE.LineBasicMaterial({ color: 0x2b3a4d }));
+  box.position.y = (HMAX + 0.2) / 2; world.add(box);
+
+  // floor with decision regions painted from the fitted plane
+  const TEX = 200, fc = document.createElement('canvas'); fc.width = fc.height = TEX;
+  const fctx = fc.getContext('2d'), img = fctx.createImageData(TEX, TEX);
+  const floorTex = new THREE.CanvasTexture(fc);
+  if ('colorSpace' in floorTex) floorTex.colorSpace = THREE.SRGBColorSpace; else floorTex.encoding = THREE.sRGBEncoding;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * R, 2 * R).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: floorTex }));
+  world.add(floor);
+
+  const sph = new THREE.SphereGeometry(0.045, 14, 10);
+  const meshA = new THREE.InstancedMesh(sph, new THREE.MeshStandardMaterial({ color: 0xef8a62, roughness: 0.45 }), N);
+  const meshB = new THREE.InstancedMesh(sph, new THREE.MeshStandardMaterial({ color: 0x63b4d1, roughness: 0.45 }), N);
+  world.add(meshA, meshB);
+  const stemGeo = new THREE.BufferGeometry(); stemGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 6), 3));
+  const stems = new THREE.LineSegments(stemGeo, new THREE.LineBasicMaterial({ color: 0x46596f, transparent: true, opacity: 0.55 }));
+  world.add(stems);
+
+  const SG = 56, surfGeo = new THREE.PlaneGeometry(2 * R, 2 * R, SG, SG).rotateX(-Math.PI / 2);
+  const surface = new THREE.Mesh(surfGeo, new THREE.MeshBasicMaterial({ color: 0x92a3b5, wireframe: true, transparent: true, opacity: 0.16, clippingPlanes: clips }));
+  world.add(surface);
+
+  const planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({ color: 0xe9c46a, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: clips }));
+  world.add(planeMesh);
+
+  const landmark = new THREE.Group();
+  landmark.add(new THREE.Mesh(new THREE.RingGeometry(0.07, 0.1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xe9c46a, side: THREE.DoubleSide })));
+  landmark.position.y = 0.006; world.add(landmark);
+
+  // VR info panel
+  const pc = document.createElement('canvas'); pc.width = 1024; pc.height = 360;
+  const pctx = pc.getContext('2d'), panelTex = new THREE.CanvasTexture(pc);
+  const vrPanel = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.27), new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
+  vrPanel.position.set(0, HMAX + 1.1, -R - 0.2); vrPanel.visible = false; world.add(vrPanel);
+
+  /* ---------- updates ---------- */
+  let flatFit = null, liftFit = null;
+  const dummy = new THREE.Object3D();
+
+  function updatePoints() {
+    let ia = 0, ib = 0; const sp = stemGeo.attributes.position.array;
+    pts.forEach((p, i) => {
+      const h = H(p.x, p.y, state.t);
+      dummy.position.set(p.x, h + 0.045, p.y); dummy.updateMatrix();
+      if (p.lab > 0) meshA.setMatrixAt(ia++, dummy.matrix); else meshB.setMatrixAt(ib++, dummy.matrix);
+      sp.set([p.x, 0, p.y, p.x, h, p.y], i * 6);
+    });
+    meshA.count = ia; meshB.count = ib;
+    meshA.instanceMatrix.needsUpdate = meshB.instanceMatrix.needsUpdate = true;
+    stemGeo.setDrawRange(0, pts.length * 2); stemGeo.attributes.position.needsUpdate = true;
+  }
+
+  function updateSurface() {
+    surface.visible = state.surface && state.map !== 'none' && state.t > 0.001;
+    if (!surface.visible) return;
+    const pos = surfGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, H(pos.getX(i), pos.getZ(i), state.t));
+    pos.needsUpdate = true;
+  }
+
+  function updatePlane() {
+    const f = liftFit, n = new THREE.Vector3(f.w[0], f.w[1], f.w[2]), len = n.length();
+    planeMesh.visible = !state.hide && len > 1e-3;
+    if (!planeMesh.visible) return;
+    n.divideScalar(len); const d = f.b / len, c = new THREE.Vector3(0, 0.8, 0);
+    planeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    planeMesh.position.copy(c).addScaledVector(n, -(n.dot(c) + d));
+  }
+
+  function paintFloor() {
+    const D = img.data, f = liftFit, sgn = new Int8Array(TEX * TEX), paint = !state.hide && f;
+    for (let r = 0; r < TEX; r++) for (let c = 0; c < TEX; c++) {
+      const x = -R + (c + 0.5) / TEX * 2 * R, z = -R + (r + 0.5) / TEX * 2 * R;
+      let col = COL.floor;
+      const gx = Math.abs(((x + R) / 0.5) % 1), gz = Math.abs(((z + R) / 0.5) % 1);
+      if (gx < 0.03 || gz < 0.03) col = COL.grid;
+      let out = col;
+      if (paint) {
+        const s = f.w[0] * x + f.w[1] * H(x, z, state.t) + f.w[2] * z + f.b;
+        sgn[r * TEX + c] = s >= 0 ? 1 : -1;
+        const t = s >= 0 ? COL.a : COL.b, k = 0.2;
+        out = [col[0] * (1 - k) + t[0] * k, col[1] * (1 - k) + t[1] * k, col[2] * (1 - k) + t[2] * k];
+      }
+      const o = (r * TEX + c) * 4; D[o] = out[0]; D[o + 1] = out[1]; D[o + 2] = out[2]; D[o + 3] = 255;
+    }
+    if (paint) {
+      for (let r = 0; r < TEX; r++) for (let c = 0; c < TEX; c++) {
+        const s = sgn[r * TEX + c];
+        if ((c + 1 < TEX && sgn[r * TEX + c + 1] !== s) || (r + 1 < TEX && sgn[(r + 1) * TEX + c] !== s)) {
+          const o = (r * TEX + c) * 4; D[o] = COL.plane[0]; D[o + 1] = COL.plane[1]; D[o + 2] = COL.plane[2];
+        }
+      }
+    }
+    fctx.putImageData(img, 0, 0); floorTex.needsUpdate = true;
+  }
+
+  const pct = v => Math.round(v * 100) + '%';
+  function updateReadout() {
+    $('#flatAcc').textContent = pct(flatFit.acc); $('#flatBar').style.width = pct(flatFit.acc);
+    let msg;
+    if (state.hide) {
+      $('#liftAcc').textContent = '?'; $('#liftBar').style.width = '0%';
+      msg = 'Predict first: at full lift, will a flat plane separate the two colours? Then show the plane.';
+    } else {
+      $('#liftAcc').textContent = pct(liftFit.acc); $('#liftBar').style.width = pct(liftFit.acc);
+      if (state.map === 'none') msg = 'Without a lift the plane stands upright, which is just a straight line on the floor.';
+      else if (state.t < 0.05) msg = 'Not lifted yet. Raise the points and watch the plane tilt.';
+      else if (liftFit.acc >= 0.97) msg = 'A flat plane separates the classes here. The amber curve on the floor is where that plane slices the surface.';
+      else if (liftFit.acc > flatFit.acc + 0.08) msg = 'Lifting helps, but this map does not fully separate the classes.';
+      else msg = 'This map gives the plane nothing useful to cut. Try another.';
+    }
+    $('#verdict').textContent = msg;
+  }
+
+  function drawVrPanel() {
+    const g = pctx; g.clearRect(0, 0, 1024, 360);
+    g.fillStyle = 'rgba(23,33,48,0.92)'; g.beginPath(); g.roundRect ? g.roundRect(0, 0, 1024, 360, 28) : g.rect(0, 0, 1024, 360); g.fill();
+    g.fillStyle = '#92a3b5'; g.font = '500 30px "Spline Sans Mono", monospace';
+    g.fillText('KERNEL LIFT', 40, 60);
+    g.fillStyle = '#e4ebf2'; g.font = '600 46px "Spline Sans", sans-serif';
+    g.fillText(NAMES[state.data] + '   ·   φ = ' + NAMES[state.map], 40, 130);
+    g.font = '500 38px "Spline Sans", sans-serif';
+    g.fillStyle = '#92a3b5'; g.fillText('Flat ' + pct(flatFit.acc), 40, 200);
+    g.fillStyle = '#e9c46a'; g.fillText('Lifted ' + (state.hide ? '?' : pct(liftFit.acc)) + '   (lift ' + Math.round(state.t * 100) + '%)', 300, 200);
+    g.fillStyle = '#92a3b5'; g.font = '400 28px "Spline Sans", sans-serif';
+    g.fillText('Trigger: lift / lower    Right grip: next map    Left grip: next data', 40, 290);
+    panelTex.needsUpdate = true;
+  }
+
+  function refit() {
+    computeRange();
+    liftFit = fit(state.t);
+    updatePoints(); updateSurface(); updatePlane(); paintFloor(); updateReadout();
+    landmark.visible = state.map === 'rbf'; landmark.position.x = state.lm[0]; landmark.position.z = state.lm[1];
+    if (vrPanel.visible) drawVrPanel();
+  }
+  function rebuildData() { buildPoints(); flatFit = fit(0); refit(); }
+
+  /* ---------- UI ---------- */
+  function syncUI() {
+    document.querySelectorAll('#dataSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.data));
+    document.querySelectorAll('#mapSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.map));
+    $('#formula').textContent = MAPS[state.map].formula; $('#mapNote').textContent = MAPS[state.map].note;
+    $('#gammaRow').hidden = state.map !== 'rbf'; $('#gammaOut').textContent = state.gamma.toFixed(1);
+    $('#lift').value = Math.round(state.t * 100); $('#liftOut').textContent = Math.round(state.t * 100) + '%';
+    $('#noiseOut').textContent = state.noise.toFixed(2);
+    $('#play').textContent = state.t > 0.5 ? 'Lower it' : 'Lift it';
+  }
+  function setData(v) { state.data = v; state.lm = DATA_LM[v].slice(); syncUI(); rebuildData(); }
+  function setMap(v) { state.map = v; syncUI(); refit(); }
+  $('#dataSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setData(b.dataset.v); });
+  $('#mapSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMap(b.dataset.v); });
+  $('#gamma').addEventListener('input', e => { state.gamma = +e.target.value; syncUI(); refit(); });
+  $('#lift').addEventListener('input', e => { state.anim = null; state.t = e.target.value / 100; syncUI(); refit(); });
+  $('#noise').addEventListener('input', e => { state.noise = e.target.value / 100; syncUI(); rebuildData(); });
+  $('#hide').addEventListener('change', e => { state.hide = e.target.checked; refit(); });
+  $('#surface').addEventListener('change', e => { state.surface = e.target.checked; updateSurface(); });
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function toggleLift() { state.anim = { from: state.t, to: state.t > 0.5 ? 0 : 1, t0: performance.now(), dur: reduce ? 0 : 1800 }; }
+  $('#play').addEventListener('click', toggleLift);
+
+  // click the floor to move the RBF landmark
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
+  renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (!down || state.map !== 'rbf' || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+    const rc = renderer.domElement.getBoundingClientRect();
+    ndc.set((e.clientX - rc.left) / rc.width * 2 - 1, -(e.clientY - rc.top) / rc.height * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(floor)[0];
+    if (hit) { const p = world.worldToLocal(hit.point.clone()); state.lm = [p.x, p.z]; refit(); }
+  });
+
+  /* ---------- WebXR ---------- */
+  const vrBtn = $('#vrBtn'), vrMsg = $('#vrMsg');
+  const noVR = 'Open this page in a WebXR headset browser, such as the Meta Quest browser, to enter VR.';
+  if (navigator.xr && navigator.xr.isSessionSupported) {
+    navigator.xr.isSessionSupported('immersive-vr').then(ok => { if (ok) vrBtn.hidden = false; else vrMsg.textContent = noVR; }).catch(() => { vrMsg.textContent = noVR; });
+  } else vrMsg.textContent = noVR;
+
+  async function startVR() {
+    let s;
+    try { s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] }); }
+    catch (e) { vrMsg.textContent = 'This page is embedded, and the browser blocks VR here. Open the standalone copy of this page on the headset.'; return; }
+    try { renderer.xr.setReferenceSpaceType('local-floor'); await renderer.xr.setSession(s); }
+    catch (e) { renderer.xr.setReferenceSpaceType('local'); await renderer.xr.setSession(s); }
+    world.position.set(0, 0.8, -0.95); world.scale.setScalar(0.3);
+    vrPanel.visible = true; drawVrPanel(); controls.enabled = false; vrBtn.textContent = 'Exit VR';
+    s.addEventListener('end', () => { world.position.set(0, 0, 0); world.scale.setScalar(1); vrPanel.visible = false; controls.enabled = true; vrBtn.textContent = 'Enter VR'; });
+  }
+  vrBtn.addEventListener('click', () => { const s = renderer.xr.getSession(); if (s) s.end(); else startVR(); });
+
+  for (let i = 0; i < 2; i++) {
+    const c = renderer.xr.getController(i); c.userData.hand = '';
+    c.addEventListener('connected', e => { c.userData.hand = e.data.handedness; });
+    c.addEventListener('select', toggleLift);
+    c.addEventListener('squeeze', () => {
+      if (c.userData.hand === 'left') setData(DATA_ORDER[(DATA_ORDER.indexOf(state.data) + 1) % 3]);
+      else setMap(MAP_ORDER[(MAP_ORDER.indexOf(state.map) + 1) % 4]);
+    });
+    c.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -0.4)]), new THREE.LineBasicMaterial({ color: 0x92a3b5 })));
+    scene.add(c);
+  }
+
+  /* ---------- loop ---------- */
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+    if (renderer.xr.isPresenting) return;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+
+  renderer.setAnimationLoop(now => {
+    if (state.anim) {
+      const a = state.anim, k = a.dur ? Math.min(1, (now - a.t0) / a.dur) : 1, e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      state.t = a.from + (a.to - a.from) * e; if (k >= 1) state.anim = null;
+      syncUI(); refit();
+    }
+    world.updateMatrixWorld();
+    for (let i = 0; i < clips.length; i++) clips[i].copy(localClips[i]).applyMatrix4(world.matrixWorld);
+    if (controls.enabled) controls.update();
+    renderer.render(scene, camera);
+  });
+
+  syncUI(); rebuildData(); resize();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (vrPanel.visible) drawVrPanel(); });
+})();
+</script>
+
+</body>
+</html>
