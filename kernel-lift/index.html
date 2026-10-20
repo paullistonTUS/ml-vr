@@ -47,6 +47,7 @@ h1 span { color: var(--plane); }
 .group { display: flex; flex-direction: column; gap: 8px; }
 .label { font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
 .label output { color: var(--text); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.sym { text-transform: none; letter-spacing: 0; font-family: var(--body); font-size: 14px; }
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg button {
   font: 500 13px var(--body); color: var(--text); background: var(--raise);
@@ -134,8 +135,9 @@ details p strong { color: var(--text); font-weight: 600; }
     </div>
 
     <div class="group" id="gammaRow">
-      <label class="label" for="gamma">Bump width γ <output id="gammaOut"></output></label>
+      <label class="label" for="gamma"><span>Bump sharpness <span class="sym">γ</span></span> <output id="gammaOut"></output></label>
       <input type="range" id="gamma" min="0.5" max="8" step="0.1" value="3">
+      <p class="note" id="gammaNote"></p>
       <p class="note">Click the floor to move the landmark c.</p>
     </div>
 
@@ -207,7 +209,7 @@ details p strong { color: var(--text); font-weight: 600; }
     none:    { f: () => 0, formula: 'φ(x) = (x₁, x₂)', note: 'No extra coordinate. A linear model can only draw a straight line on the floor.' },
     radius:  { f: (x, y) => x * x + y * y, formula: 'φ(x) = (x₁, x₂, x₁² + x₂²)', note: 'Height grows with distance from the origin. These terms sit inside the polynomial kernel K(x, z) = (x·z + 1)².' },
     product: { f: (x, y) => x * y, formula: 'φ(x) = (x₁, x₂, x₁x₂)', note: 'The cross term, also inside (x·z + 1)². Opposite quadrants rise and fall.' },
-    rbf:     { f: (x, y) => Math.exp(-state.gamma * ((x - state.lm[0]) ** 2 + (y - state.lm[1]) ** 2)), formula: 'φ(x) = (x₁, x₂, exp(−γ‖x − c‖²))', note: 'One Gaussian bump at landmark c. The full RBF kernel K(x, z) = exp(−γ‖x − z‖²) effectively centres a bump on every training point.' }
+    rbf:     { f: (x, y) => Math.exp(-state.gamma * ((x - state.lm[0]) ** 2 + (y - state.lm[1]) ** 2)), formula: 'φ(x) = (x₁, x₂, exp(−γ‖x − c‖²))', note: 'One Gaussian bump at landmark c, with sharpness γ (gamma). The full RBF kernel K(x, z) = exp(−γ‖x − z‖²) effectively centres a bump on every training point.' }
   };
   const MAP_ORDER = ['none', 'radius', 'product', 'rbf'], DATA_ORDER = ['rings', 'xor', 'island'];
   const NAMES = { rings: 'Rings', xor: 'XOR', island: 'Island', none: 'None', radius: 'x1² + x2²', product: 'x1·x2', rbf: 'RBF bump' };
@@ -442,6 +444,7 @@ details p strong { color: var(--text); font-weight: 600; }
     document.querySelectorAll('#mapSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.map));
     $('#formula').textContent = MAPS[state.map].formula; $('#mapNote').textContent = MAPS[state.map].note;
     $('#gammaRow').hidden = state.map !== 'rbf'; $('#gammaOut').textContent = state.gamma.toFixed(1);
+    $('#gammaNote').textContent = 'Higher γ (gamma) makes a narrower bump. The height halves ' + Math.sqrt(Math.LN2 / state.gamma).toFixed(2) + ' from c.';
     $('#lift').value = Math.round(state.t * 100); $('#liftOut').textContent = Math.round(state.t * 100) + '%';
     $('#noiseOut').textContent = state.noise.toFixed(2);
     $('#play').textContent = state.t > 0.5 ? 'Lower it' : 'Lift it';
