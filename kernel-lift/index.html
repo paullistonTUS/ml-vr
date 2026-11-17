@@ -144,7 +144,7 @@ details p strong { color: var(--text); font-weight: 600; }
     <div class="group">
       <label class="label" for="lift">Lift <output id="liftOut"></output></label>
       <div class="row">
-        <input type="range" id="lift" min="0" max="100" step="1" value="100">
+        <input type="range" id="lift" min="0" max="100" step="1" value="0">
         <button type="button" class="play" id="play">Lower it</button>
       </div>
     </div>
@@ -156,6 +156,10 @@ details p strong { color: var(--text); font-weight: 600; }
 
     <div class="group">
       <div class="label">View</div>
+      <div class="seg" id="viewSeg">
+        <button type="button" data-v="top">Top down</button>
+        <button type="button" data-v="angled">Angled</button>
+      </div>
       <label class="check"><input type="checkbox" id="hide"> Hide the plane (predict first)</label>
       <label class="check"><input type="checkbox" id="surface" checked> Show the map surface</label>
     </div>
@@ -202,7 +206,7 @@ details p strong { color: var(--text); font-weight: 600; }
   const R = 1.8, HMAX = 1.6, N = 240;
   const COL = { bg: 0x0f1620, floor: [27, 38, 51], grid: [40, 54, 70], a: [239, 138, 98], b: [99, 180, 209], plane: [233, 196, 106] };
 
-  const state = { data: 'rings', map: 'radius', t: 1, noise: 0.05, gamma: 3, lm: [0, 0], hide: false, surface: true, anim: null };
+  const state = { data: 'rings', map: 'radius', t: 0, noise: 0.05, gamma: 3, lm: [0, 0], hide: false, surface: true, anim: null };
   const DATA_LM = { rings: [0, 0], xor: [0, 0], island: [0.55, 0.35] };
 
   const MAPS = {
@@ -285,9 +289,10 @@ details p strong { color: var(--text); font-weight: 600; }
 
   const scene = new THREE.Scene(); scene.background = new THREE.Color(COL.bg);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
-  camera.position.set(3.5, 3.1, 4.0);
+  const VIEWS = { top: { pos: [0, 6.2, 0.001], target: [0, 0, 0] }, angled: { pos: [3.5, 3.1, 4.0], target: [0, 0.55, 0] } };
+  camera.position.set(...VIEWS.top.pos);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0.55, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.update();
+  controls.target.set(...VIEWS.top.target); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.update();
   scene.add(new THREE.HemisphereLight(0xdfe9f5, 0x1a2230, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(3, 6, 2); scene.add(sun);
 
@@ -454,12 +459,27 @@ details p strong { color: var(--text); font-weight: 600; }
   $('#dataSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setData(b.dataset.v); });
   $('#mapSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setMap(b.dataset.v); });
   $('#gamma').addEventListener('input', e => { state.gamma = +e.target.value; syncUI(); refit(); });
-  $('#lift').addEventListener('input', e => { state.anim = null; state.t = e.target.value / 100; syncUI(); refit(); });
+  $('#lift').addEventListener('input', e => { state.anim = null; state.t = e.target.value / 100; if (state.t > 0 && view === 'top') setView('angled'); syncUI(); refit(); });
   $('#noise').addEventListener('input', e => { state.noise = e.target.value / 100; syncUI(); rebuildData(); });
   $('#hide').addEventListener('change', e => { state.hide = e.target.checked; refit(); });
   $('#surface').addEventListener('change', e => { state.surface = e.target.checked; updateSurface(); });
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function toggleLift() { state.anim = { from: state.t, to: state.t > 0.5 ? 0 : 1, t0: performance.now(), dur: reduce ? 0 : 1800 }; }
+  function toggleLift() {
+    const to = state.t > 0.5 ? 0 : 1;
+    if (to === 1 && view === 'top' && !renderer.xr.isPresenting) setView('angled');
+    state.anim = { from: state.t, to, t0: performance.now(), dur: reduce ? 0 : 1800 };
+  }
+  // camera views: opens top down; lifting swings to the angled view
+  let view = 'top', camAnim = null;
+  function syncView() { document.querySelectorAll('#viewSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === view)); }
+  function setView(name) {
+    view = name; syncView();
+    const v = VIEWS[name];
+    camAnim = { p0: camera.position.clone(), t0v: controls.target.clone(), p1: new THREE.Vector3(...v.pos), t1: new THREE.Vector3(...v.target), start: performance.now(), dur: reduce ? 0 : 1000 };
+  }
+  $('#viewSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); });
+  controls.addEventListener('start', () => { camAnim = null; view = ''; syncView(); });
+  syncView();
   $('#play').addEventListener('click', toggleLift);
 
   // click the floor to move the RBF landmark
@@ -521,6 +541,11 @@ details p strong { color: var(--text); font-weight: 600; }
     }
     world.updateMatrixWorld();
     for (let i = 0; i < clips.length; i++) clips[i].copy(localClips[i]).applyMatrix4(world.matrixWorld);
+    if (camAnim) {
+      const k = camAnim.dur ? Math.min(1, (now - camAnim.start) / camAnim.dur) : 1, e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      camera.position.lerpVectors(camAnim.p0, camAnim.p1, e); controls.target.lerpVectors(camAnim.t0v, camAnim.t1, e);
+      if (k >= 1) camAnim = null;
+    }
     if (controls.enabled) controls.update();
     renderer.render(scene, camera);
   });
