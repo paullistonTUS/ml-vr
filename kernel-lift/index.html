@@ -334,11 +334,29 @@ details p strong { color: var(--text); font-weight: 600; }
   landmark.add(new THREE.Mesh(new THREE.RingGeometry(0.07, 0.1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xe9c46a, side: THREE.DoubleSide })));
   landmark.position.y = 0.006; world.add(landmark);
 
-  // VR info panel
+  // VR panels sit in a fixed group, so grabbing the model does not move them
+  const srgb = t => { if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace; else t.encoding = THREE.sRGBEncoding; return t; };
+  const ui = new THREE.Group(); ui.visible = false; scene.add(ui);
   const pc = document.createElement('canvas'); pc.width = 1024; pc.height = 360;
-  const pctx = pc.getContext('2d'), panelTex = new THREE.CanvasTexture(pc);
-  const vrPanel = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.27), new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
-  vrPanel.position.set(0, HMAX + 1.1, -R - 0.2); vrPanel.visible = false; world.add(vrPanel);
+  const pctx = pc.getContext('2d'), panelTex = srgb(new THREE.CanvasTexture(pc));
+  const vrPanel = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 0.38), new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
+  vrPanel.position.set(0, 1.62, -1.6); ui.add(vrPanel);
+  const cc = document.createElement('canvas'); cc.width = 1024; cc.height = 768;
+  const cctx = cc.getContext('2d'), ctrlTex = srgb(new THREE.CanvasTexture(cc));
+  const ctrlPanel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.45), new THREE.MeshBasicMaterial({ map: ctrlTex, transparent: true }));
+  ctrlPanel.position.set(-0.85, 1.05, -0.8); ctrlPanel.rotation.set(-0.25, Math.atan2(0.85, 0.8), 0, 'YXZ'); ui.add(ctrlPanel);
+  // invisible box the controller rays hit when grabbing the model
+  const hitBox = new THREE.Mesh(new THREE.BoxGeometry(2 * R, HMAX + 0.2, 2 * R), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
+  hitBox.position.y = (HMAX + 0.2) / 2; world.add(hitBox);
+  const BTNS = [
+    { id: 'lift', x: 30, y: 100, w: 470, h: 150, label: () => state.t > 0.5 ? 'Lower points' : 'Lift points' },
+    { id: 'plane', x: 524, y: 100, w: 470, h: 150, label: () => state.hide ? 'Show plane' : 'Hide plane' },
+    { id: 'reset', x: 30, y: 280, w: 470, h: 150, label: () => 'Reset view' },
+    { id: 'gminus', x: 524, y: 280, w: 140, h: 150, label: () => '\u2212', rbf: true },
+    { id: 'gplus', x: 854, y: 280, w: 140, h: 150, label: () => '+', rbf: true },
+    { id: 'exit', x: 30, y: 570, w: 964, h: 160, label: () => 'Hold to exit VR' }
+  ];
+  let hoverBtn = null, exitHold = null, ctrlKey = '';
 
   /* ---------- updates ---------- */
   let flatFit = null, liftFit = null;
@@ -429,9 +447,35 @@ details p strong { color: var(--text); font-weight: 600; }
     g.font = '500 38px "Spline Sans", sans-serif';
     g.fillStyle = '#92a3b5'; g.fillText('Flat ' + pct(flatFit.acc), 40, 200);
     g.fillStyle = '#e9c46a'; g.fillText('Lifted ' + (state.hide ? '?' : pct(liftFit.acc)) + '   (lift ' + Math.round(state.t * 100) + '%)', 300, 200);
-    g.fillStyle = '#92a3b5'; g.font = '400 28px "Spline Sans", sans-serif';
-    g.fillText('Trigger: lift / lower    Right grip: next map    Left grip: next data', 40, 290);
+    g.fillStyle = '#92a3b5'; g.font = '400 27px "Spline Sans", sans-serif';
+    g.fillText('Grip: grab, twist wrist to turn    Both grips: turn and resize', 40, 268);
+    g.fillText('A / B: map    X / Y: data    Trigger: lift, or press a button', 40, 316);
     panelTex.needsUpdate = true;
+  }
+
+  function rr(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+  function drawCtrlPanel() {
+    const g = cctx, rbf = state.map === 'rbf'; g.clearRect(0, 0, 1024, 768);
+    rr(g, 0, 0, 1024, 768, 28); g.fillStyle = 'rgba(23,33,48,0.94)'; g.fill();
+    g.fillStyle = '#92a3b5'; g.font = '500 30px "Spline Sans Mono", monospace'; g.fillText('CONTROLS', 30, 66);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const b of BTNS) {
+      const off = b.rbf && !rbf, exit = b.id === 'exit', hot = hoverBtn === b.id && !off;
+      rr(g, b.x, b.y, b.w, b.h, 18);
+      g.fillStyle = exit ? (hot ? '#4d2a2c' : '#33232a') : hot ? '#e9c46a' : '#1e2a3b'; g.fill();
+      if (exit && exitHold) { rr(g, b.x, b.y, b.w * exitHold.frac, b.h, 18); g.fillStyle = '#c0504d'; g.fill(); }
+      rr(g, b.x, b.y, b.w, b.h, 18); g.lineWidth = 3; g.strokeStyle = exit ? '#c0504d' : off ? '#243142' : '#2b3a4d'; g.stroke();
+      g.fillStyle = off ? '#4a5a6c' : hot && !exit ? '#1a1406' : '#e4ebf2';
+      g.font = '600 50px "Spline Sans", sans-serif'; g.fillText(b.label(), b.x + b.w / 2, b.y + b.h / 2 + 2);
+    }
+    g.fillStyle = rbf ? '#e9c46a' : '#4a5a6c'; g.font = '600 46px "Spline Sans", sans-serif';
+    g.fillText('\u03b3 ' + state.gamma.toFixed(1), 759, 338);
+    g.fillStyle = '#92a3b5'; g.font = '400 25px "Spline Sans", sans-serif';
+    g.fillText(rbf ? 'bump sharpness' : 'RBF map only', 759, 392);
+    g.fillText(rbf ? 'RBF map: point at the floor and pull the trigger to move the landmark' : '', 512, 476);
+    g.fillText('Hold the trigger on this button for one second', 512, 535);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    ctrlTex.needsUpdate = true;
   }
 
   function refit() {
@@ -439,7 +483,11 @@ details p strong { color: var(--text); font-weight: 600; }
     liftFit = fit(state.t);
     updatePoints(); updateSurface(); updatePlane(); paintFloor(); updateReadout();
     landmark.visible = state.map === 'rbf'; landmark.position.x = state.lm[0]; landmark.position.z = state.lm[1];
-    if (vrPanel.visible) drawVrPanel();
+    if (ui.visible) {
+      drawVrPanel();
+      const k = [state.t > 0.5, state.map, state.hide, state.gamma].join('|');
+      if (k !== ctrlKey) { ctrlKey = k; drawCtrlPanel(); }
+    }
   }
   function rebuildData() { buildPoints(); flatFit = fit(0); refit(); }
 
@@ -501,28 +549,161 @@ details p strong { color: var(--text); font-weight: 600; }
     navigator.xr.isSessionSupported('immersive-vr').then(ok => { if (ok) vrBtn.hidden = false; else vrMsg.textContent = noVR; }).catch(() => { vrMsg.textContent = noVR; });
   } else vrMsg.textContent = noVR;
 
+  const VR_HOME = { pos: [0, 0.8, -0.95], scale: 0.3 };
+  function placeModel() {
+    world.position.set(...VR_HOME.pos); world.rotation.set(0, 0, 0); world.scale.setScalar(VR_HOME.scale);
+    grabs.length = 0; grabRef = null;
+  }
   async function startVR() {
     let s;
     try { s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] }); }
     catch (e) { vrMsg.textContent = 'This page is embedded, and the browser blocks VR here. Open the standalone copy of this page on the headset.'; return; }
     try { renderer.xr.setReferenceSpaceType('local-floor'); await renderer.xr.setSession(s); }
     catch (e) { renderer.xr.setReferenceSpaceType('local'); await renderer.xr.setSession(s); }
-    world.position.set(0, 0.8, -0.95); world.scale.setScalar(0.3);
-    vrPanel.visible = true; drawVrPanel(); controls.enabled = false; vrBtn.textContent = 'Exit VR';
-    s.addEventListener('end', () => { world.position.set(0, 0, 0); world.scale.setScalar(1); vrPanel.visible = false; controls.enabled = true; vrBtn.textContent = 'Enter VR'; });
+    placeModel(); ui.visible = true; drawVrPanel(); drawCtrlPanel(); controls.enabled = false; vrBtn.textContent = 'Exit VR';
+    s.addEventListener('end', () => {
+      grabs.length = 0; grabRef = null; exitHold = null; hoverBtn = null;
+      world.position.set(0, 0, 0); world.rotation.set(0, 0, 0); world.scale.setScalar(1);
+      ui.visible = false; controls.enabled = true; vrBtn.textContent = 'Enter VR';
+    });
   }
   vrBtn.addEventListener('click', () => { const s = renderer.xr.getSession(); if (s) s.end(); else startVR(); });
 
+  /* ---------- VR controllers ---------- */
+  const xrRay = new THREE.Raycaster(), tmpM = new THREE.Matrix4(), ctrls = [], grabs = [];
+  let grabRef = null;
+  const TWIST_GAIN = 1.5, EXIT_HOLD_MS = 1000;
+  const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+  function castFrom(c) {
+    tmpM.identity().extractRotation(c.matrixWorld);
+    xrRay.ray.origin.setFromMatrixPosition(c.matrixWorld);
+    xrRay.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+    const p = xrRay.intersectObject(ctrlPanel, false)[0];
+    if (p) {
+      const x = p.uv.x * 1024, y = (1 - p.uv.y) * 768;
+      const b = BTNS.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+      return { kind: b ? 'button' : 'panel', id: b ? b.id : null, dist: p.distance };
+    }
+    const m = xrRay.intersectObject(hitBox, false)[0];
+    if (m) { const f = xrRay.intersectObject(floor, false)[0]; return { kind: 'model', dist: f ? f.distance : m.distance, floor: f || null }; }
+    return null;
+  }
+
+  function pressBtn(id) {
+    if (id === 'lift') toggleLift();
+    else if (id === 'plane') { state.hide = !state.hide; $('#hide').checked = state.hide; refit(); }
+    else if (id === 'reset') placeModel();
+    else if ((id === 'gminus' || id === 'gplus') && state.map === 'rbf') {
+      state.gamma = clamp(+(state.gamma + (id === 'gplus' ? 0.5 : -0.5)).toFixed(1), 0.5, 8);
+      $('#gamma').value = state.gamma; syncUI(); refit();
+    }
+  }
+
+  function onTrigger(c) {
+    const h = castFrom(c);
+    if (h && h.kind === 'button') {
+      if (h.id === 'exit') { exitHold = { c, t0: performance.now(), frac: 0 }; drawCtrlPanel(); }
+      else pressBtn(h.id);
+      return;
+    }
+    if (h && h.kind === 'panel') return;
+    if (h && h.floor && state.map === 'rbf') {
+      const p = world.worldToLocal(h.floor.point.clone());
+      state.lm = [clamp(p.x, -R, R), clamp(p.z, -R, R)]; refit(); return;
+    }
+    toggleLift();
+  }
+
+  // grab: one hand moves and twists the model; two hands turn and resize it
+  function snapshot() {
+    const W0 = world.position.clone(), R0 = world.rotation.y, S0 = world.scale.x;
+    if (grabs.length === 1) {
+      const c = grabs[0]; c.userData.q.copy(c.quaternion);
+      grabRef = { mode: 1, W0, R0, p0: c.position.clone(), twist: 0 };
+    } else if (grabs.length === 2) {
+      const a = grabs[0].position, b = grabs[1].position;
+      grabRef = { mode: 2, W0, R0, S0, mid0: a.clone().add(b).multiplyScalar(0.5), d0: Math.max(a.distanceTo(b), 0.05), h0: Math.atan2(b.x - a.x, b.z - a.z) };
+    } else grabRef = null;
+  }
+  function grab(c) {
+    if (grabs.includes(c) || grabs.length >= 2) return;
+    const h = castFrom(c); if (!h || h.kind !== 'model') return;
+    grabs.push(c); snapshot();
+  }
+  function release(c) { const i = grabs.indexOf(c); if (i < 0) return; grabs.splice(i, 1); snapshot(); }
+
+  const qd = new THREE.Quaternion(), fwd = new THREE.Vector3(), mid = new THREE.Vector3();
+  function updateGrab() {
+    const g = grabRef; if (!g) return;
+    if (g.mode === 1) {
+      const c = grabs[0];
+      qd.copy(c.userData.q).invert().premultiply(c.quaternion);      // rotation since last frame
+      if (qd.w < 0) { qd.x = -qd.x; qd.y = -qd.y; qd.z = -qd.z; qd.w = -qd.w; }
+      fwd.set(0, 0, -1).applyQuaternion(c.quaternion);
+      g.twist += 2 * Math.atan2(qd.x * fwd.x + qd.y * fwd.y + qd.z * fwd.z, qd.w);  // wrist roll about the pointing axis
+      c.userData.q.copy(c.quaternion);
+      world.rotation.y = g.R0 - TWIST_GAIN * g.twist;
+      world.position.copy(g.W0).add(c.position).sub(g.p0);
+    } else {
+      const a = grabs[0].position, b = grabs[1].position;
+      world.scale.setScalar(clamp(g.S0 * a.distanceTo(b) / g.d0, 0.12, 0.9));
+      world.rotation.y = g.R0 + wrapAngle(Math.atan2(b.x - a.x, b.z - a.z) - g.h0);
+      mid.copy(a).add(b).multiplyScalar(0.5);
+      world.position.copy(g.W0).add(mid).sub(g.mid0);
+    }
+  }
+
+  // A/B on the right hand cycle maps; X/Y on the left cycle datasets
+  const cycle = (list, cur, step) => list[(list.indexOf(cur) + step + list.length) % list.length];
+  function pollButtons() {
+    for (const c of ctrls) {
+      const src = c.userData.source, gp = src && src.gamepad; if (!gp) continue;
+      const now = [4, 5].map(i => !!(gp.buttons[i] && gp.buttons[i].pressed)), prev = c.userData.prevBtn;
+      now.forEach((on, k) => {
+        if (!on || prev[k]) return;
+        const step = k === 0 ? 1 : -1;
+        if (c.userData.hand === 'left') setData(cycle(DATA_ORDER, state.data, step));
+        else setMap(cycle(MAP_ORDER, state.map, step));
+      });
+      c.userData.prevBtn = now;
+    }
+  }
+
+  function updateRays(now) {
+    let hov = null;
+    for (const c of ctrls) {
+      const line = c.userData.line;
+      line.visible = !!c.userData.source; if (!line.visible) continue;
+      const h = castFrom(c), held = grabs.includes(c);
+      line.material.color.setHex(held ? 0x63b4d1 : h && h.kind === 'button' ? 0xe9c46a : h && h.kind === 'model' ? 0xc9dde8 : 0x92a3b5);
+      line.scale.z = h ? h.dist : 1.5;
+      if (h && h.kind === 'button') hov = h.id;
+    }
+    if (exitHold) {
+      const h = castFrom(exitHold.c);
+      if (!h || h.id !== 'exit') exitHold = null;
+      else {
+        exitHold.frac = Math.min(1, (now - exitHold.t0) / EXIT_HOLD_MS);
+        if (exitHold.frac >= 1) { exitHold = null; const s = renderer.xr.getSession(); if (s) s.end(); return; }
+      }
+      drawCtrlPanel();
+    }
+    if (hov !== hoverBtn) { hoverBtn = hov; drawCtrlPanel(); }
+  }
+
   for (let i = 0; i < 2; i++) {
-    const c = renderer.xr.getController(i); c.userData.hand = '';
-    c.addEventListener('connected', e => { c.userData.hand = e.data.handedness; });
-    c.addEventListener('select', toggleLift);
-    c.addEventListener('squeeze', () => {
-      if (c.userData.hand === 'left') setData(DATA_ORDER[(DATA_ORDER.indexOf(state.data) + 1) % 3]);
-      else setMap(MAP_ORDER[(MAP_ORDER.indexOf(state.map) + 1) % 4]);
-    });
-    c.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -0.4)]), new THREE.LineBasicMaterial({ color: 0x92a3b5 })));
-    scene.add(c);
+    const c = renderer.xr.getController(i);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0x92a3b5 }));
+    line.visible = false; c.add(line);
+    c.userData = { source: null, hand: '', prevBtn: [false, false], q: new THREE.Quaternion(), line };
+    c.addEventListener('connected', e => { c.userData.source = e.data; c.userData.hand = e.data.handedness; });
+    c.addEventListener('disconnected', () => { release(c); c.userData.source = null; });
+    c.addEventListener('selectstart', () => onTrigger(c));
+    c.addEventListener('selectend', () => { if (exitHold && exitHold.c === c) { exitHold = null; drawCtrlPanel(); } });
+    c.addEventListener('squeezestart', () => grab(c));
+    c.addEventListener('squeezeend', () => release(c));
+    scene.add(c); ctrls.push(c);
   }
 
   /* ---------- loop ---------- */
@@ -539,6 +720,7 @@ details p strong { color: var(--text); font-weight: 600; }
       state.t = a.from + (a.to - a.from) * e; if (k >= 1) state.anim = null;
       syncUI(); refit();
     }
+    if (renderer.xr.isPresenting) { pollButtons(); updateGrab(); updateRays(now); }
     world.updateMatrixWorld();
     for (let i = 0; i < clips.length; i++) clips[i].copy(localClips[i]).applyMatrix4(world.matrixWorld);
     if (camAnim) {
@@ -551,7 +733,7 @@ details p strong { color: var(--text); font-weight: 600; }
   });
 
   syncUI(); rebuildData(); resize();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (vrPanel.visible) drawVrPanel(); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (ui.visible) { drawVrPanel(); drawCtrlPanel(); } });
 })();
 </script>
 
