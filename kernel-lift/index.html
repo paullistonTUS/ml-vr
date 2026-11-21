@@ -16,9 +16,10 @@
   --line: #2b3a4d;
   --text: #e4ebf2;
   --muted: #92a3b5;
-  --a: #ef8a62;      /* class A */
-  --b: #63b4d1;      /* class B */
-  --plane: #e9c46a;  /* separating plane, accent */
+  --a: #f2995e;      /* class A: light orange, drawn as spheres */
+  --b: #2f78c4;      /* class B: deeper blue, drawn as cubes (differs in lightness as well as hue) */
+  --sep: #eef2f6;    /* separating plane and floor boundary: pale neutral, clear of both classes */
+  --plane: #e9c46a;  /* interface accent */
   --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --body: "Spline Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "Spline Sans Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -88,7 +89,8 @@ details p strong { color: var(--text); font-weight: 600; }
 }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.sw { width: 16px; height: 8px; border-radius: 2px; background: var(--plane); opacity: .7; display: inline-block; }
+.dot.sq { border-radius: 1px; }
+.sw { width: 16px; height: 8px; border-radius: 2px; background: var(--sep); opacity: .8; outline: 1px solid #0b1118; display: inline-block; }
 .hint { position: absolute; left: 12px; bottom: 12px; font: 400 12px var(--mono); color: var(--muted); pointer-events: none; }
 .vrbox { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: min(320px, 70%); }
 .vrbtn { font: 700 14px var(--display); background: var(--plane); color: #1a1406; border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
@@ -186,8 +188,8 @@ details p strong { color: var(--text); font-weight: 600; }
 
   <main class="stage" id="stage">
     <div class="legend">
-      <span><i class="dot" style="background:var(--a)"></i>Class A</span>
-      <span><i class="dot" style="background:var(--b)"></i>Class B</span>
+      <span><i class="dot" style="background:var(--a)"></i>Class A (spheres)</span>
+      <span><i class="dot sq" style="background:var(--b)"></i>Class B (cubes)</span>
       <span><i class="sw"></i>Separating plane</span>
     </div>
     <div class="hint">Drag to orbit · scroll to zoom</div>
@@ -204,7 +206,7 @@ details p strong { color: var(--text); font-weight: 600; }
 (function () {
   const $ = s => document.querySelector(s);
   const R = 1.8, HMAX = 1.6, N = 240;
-  const COL = { bg: 0x0f1620, floor: [27, 38, 51], grid: [40, 54, 70], a: [239, 138, 98], b: [99, 180, 209], plane: [233, 196, 106] };
+  const COL = { bg: 0x0f1620, floor: [27, 38, 51], grid: [40, 54, 70], a: [242, 153, 94], b: [47, 120, 196], sep: [238, 242, 246], edge: [11, 17, 24] };
 
   const state = { data: 'rings', map: 'radius', t: 0, noise: 0.05, gamma: 3, lm: [0, 0], hide: false, surface: true, anim: null };
   const DATA_LM = { rings: [0, 0], xor: [0, 0], island: [0.55, 0.35] };
@@ -315,9 +317,10 @@ details p strong { color: var(--text); font-weight: 600; }
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * R, 2 * R).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: floorTex }));
   world.add(floor);
 
-  const sph = new THREE.SphereGeometry(0.045, 14, 10);
-  const meshA = new THREE.InstancedMesh(sph, new THREE.MeshStandardMaterial({ color: 0xef8a62, roughness: 0.45 }), N);
-  const meshB = new THREE.InstancedMesh(sph, new THREE.MeshStandardMaterial({ color: 0x63b4d1, roughness: 0.45 }), N);
+  // classes differ in shape as well as colour: spheres for A, cubes for B
+  const sph = new THREE.SphereGeometry(0.045, 14, 10), cube = new THREE.BoxGeometry(0.078, 0.078, 0.078);
+  const meshA = new THREE.InstancedMesh(sph, new THREE.MeshStandardMaterial({ color: 0xf2995e, roughness: 0.45 }), N);
+  const meshB = new THREE.InstancedMesh(cube, new THREE.MeshStandardMaterial({ color: 0x2f78c4, roughness: 0.45 }), N);
   world.add(meshA, meshB);
   const stemGeo = new THREE.BufferGeometry(); stemGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 6), 3));
   const stems = new THREE.LineSegments(stemGeo, new THREE.LineBasicMaterial({ color: 0x46596f, transparent: true, opacity: 0.55 }));
@@ -327,11 +330,11 @@ details p strong { color: var(--text); font-weight: 600; }
   const surface = new THREE.Mesh(surfGeo, new THREE.MeshBasicMaterial({ color: 0x92a3b5, wireframe: true, transparent: true, opacity: 0.16, clippingPlanes: clips }));
   world.add(surface);
 
-  const planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({ color: 0xe9c46a, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: clips }));
+  const planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({ color: 0xeef2f6, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: clips }));
   world.add(planeMesh);
 
   const landmark = new THREE.Group();
-  landmark.add(new THREE.Mesh(new THREE.RingGeometry(0.07, 0.1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xe9c46a, side: THREE.DoubleSide })));
+  landmark.add(new THREE.Mesh(new THREE.RingGeometry(0.06, 0.11, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xeef2f6, side: THREE.DoubleSide })));
   landmark.position.y = 0.006; world.add(landmark);
 
   // VR panels sit in a fixed group, so grabbing the model does not move them
@@ -403,17 +406,29 @@ details p strong { color: var(--text); font-weight: 600; }
       if (paint) {
         const s = f.w[0] * x + f.w[1] * H(x, z, state.t) + f.w[2] * z + f.b;
         sgn[r * TEX + c] = s >= 0 ? 1 : -1;
-        const t = s >= 0 ? COL.a : COL.b, k = 0.2;
+        const t = s >= 0 ? COL.a : COL.b, k = 0.3;
         out = [col[0] * (1 - k) + t[0] * k, col[1] * (1 - k) + t[1] * k, col[2] * (1 - k) + t[2] * k];
       }
       const o = (r * TEX + c) * 4; D[o] = out[0]; D[o + 1] = out[1]; D[o + 2] = out[2]; D[o + 3] = 255;
     }
     if (paint) {
+      // boundary: a pale line two pixels wide, with a dark outline so it reads on both tinted sides
+      const edge = new Uint8Array(TEX * TEX);
       for (let r = 0; r < TEX; r++) for (let c = 0; c < TEX; c++) {
-        const s = sgn[r * TEX + c];
-        if ((c + 1 < TEX && sgn[r * TEX + c + 1] !== s) || (r + 1 < TEX && sgn[(r + 1) * TEX + c] !== s)) {
-          const o = (r * TEX + c) * 4; D[o] = COL.plane[0]; D[o + 1] = COL.plane[1]; D[o + 2] = COL.plane[2];
+        const i = r * TEX + c, s = sgn[i];
+        if (c + 1 < TEX && sgn[i + 1] !== s) { edge[i] = 1; edge[i + 1] = 1; }
+        if (r + 1 < TEX && sgn[i + TEX] !== s) { edge[i] = 1; edge[i + TEX] = 1; }
+      }
+      const put = (i, col) => { const o = i * 4; D[o] = col[0]; D[o + 1] = col[1]; D[o + 2] = col[2]; };
+      for (let r = 0; r < TEX; r++) for (let c = 0; c < TEX; c++) {
+        const i = r * TEX + c;
+        if (edge[i]) { put(i, COL.sep); continue; }
+        let near = false;
+        for (let dr = -1; dr <= 1 && !near; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr2 = r + dr, cc2 = c + dc;
+          if (rr2 >= 0 && rr2 < TEX && cc2 >= 0 && cc2 < TEX && edge[rr2 * TEX + cc2]) { near = true; break; }
         }
+        if (near) put(i, COL.edge);
       }
     }
     fctx.putImageData(img, 0, 0); floorTex.needsUpdate = true;
@@ -430,7 +445,7 @@ details p strong { color: var(--text); font-weight: 600; }
       $('#liftAcc').textContent = pct(liftFit.acc); $('#liftBar').style.width = pct(liftFit.acc);
       if (state.map === 'none') msg = 'Without a lift the plane stands upright, which is just a straight line on the floor.';
       else if (state.t < 0.05) msg = 'Not lifted yet. Raise the points and watch the plane tilt.';
-      else if (liftFit.acc >= 0.97) msg = 'A flat plane separates the classes here. The amber curve on the floor is where that plane slices the surface.';
+      else if (liftFit.acc >= 0.97) msg = 'A flat plane separates the classes here. The white curve on the floor is where that plane slices the surface.';
       else if (liftFit.acc > flatFit.acc + 0.08) msg = 'Lifting helps, but this map does not fully separate the classes.';
       else msg = 'This map gives the plane nothing useful to cut. Try another.';
     }
@@ -676,7 +691,7 @@ details p strong { color: var(--text); font-weight: 600; }
       const line = c.userData.line;
       line.visible = !!c.userData.source; if (!line.visible) continue;
       const h = castFrom(c), held = grabs.includes(c);
-      line.material.color.setHex(held ? 0x63b4d1 : h && h.kind === 'button' ? 0xe9c46a : h && h.kind === 'model' ? 0xc9dde8 : 0x92a3b5);
+      line.material.color.setHex(held ? 0x5fa0e0 : h && h.kind === 'button' ? 0xe9c46a : h && h.kind === 'model' ? 0xc9dde8 : 0x92a3b5);
       line.scale.z = h ? h.dist : 1.5;
       if (h && h.kind === 'button') hov = h.id;
     }
