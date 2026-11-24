@@ -344,20 +344,31 @@ details p strong { color: var(--text); font-weight: 600; }
   const pctx = pc.getContext('2d'), panelTex = srgb(new THREE.CanvasTexture(pc));
   const vrPanel = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 0.38), new THREE.MeshBasicMaterial({ map: panelTex, transparent: true }));
   vrPanel.position.set(0, 1.62, -1.6); ui.add(vrPanel);
-  const cc = document.createElement('canvas'); cc.width = 1024; cc.height = 768;
+  const cc = document.createElement('canvas'); cc.width = 1024; cc.height = 1100;
   const cctx = cc.getContext('2d'), ctrlTex = srgb(new THREE.CanvasTexture(cc));
-  const ctrlPanel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.45), new THREE.MeshBasicMaterial({ map: ctrlTex, transparent: true }));
-  ctrlPanel.position.set(-0.85, 1.05, -0.8); ctrlPanel.rotation.set(-0.25, Math.atan2(0.85, 0.8), 0, 'YXZ'); ui.add(ctrlPanel);
+  const ctrlPanel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6 * 1100 / 1024), new THREE.MeshBasicMaterial({ map: ctrlTex, transparent: true }));
+  ctrlPanel.position.set(-0.85, 1.1, -0.8); ctrlPanel.rotation.set(-0.25, Math.atan2(0.85, 0.8), 0, 'YXZ'); ui.add(ctrlPanel);
   // invisible box the controller rays hit when grabbing the model
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(2 * R, HMAX + 0.2, 2 * R), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
   hitBox.position.y = (HMAX + 0.2) / 2; world.add(hitBox);
+  // control panel: big targets, so they work with a hand-tracking pinch as well as a controller trigger
+  const PW = 1024, PH = 1100;
+  const row = (y, items, x0 = 30, w = 964, gap = 16) => {
+    const bw = (w - gap * (items.length - 1)) / items.length;
+    return items.map((it, k) => Object.assign({ x: x0 + k * (bw + gap), y, w: bw, h: 120, fs: 42 }, it));
+  };
   const BTNS = [
-    { id: 'lift', x: 30, y: 100, w: 470, h: 150, label: () => state.t > 0.5 ? 'Lower points' : 'Lift points' },
-    { id: 'plane', x: 524, y: 100, w: 470, h: 150, label: () => state.hide ? 'Show plane' : 'Hide plane' },
-    { id: 'reset', x: 30, y: 280, w: 470, h: 150, label: () => 'Reset view' },
-    { id: 'gminus', x: 524, y: 280, w: 140, h: 150, label: () => '\u2212', rbf: true },
-    { id: 'gplus', x: 854, y: 280, w: 140, h: 150, label: () => '+', rbf: true },
-    { id: 'exit', x: 30, y: 570, w: 964, h: 160, label: () => 'Hold to exit VR' }
+    ...row(110, DATA_ORDER.map(v => ({ id: 'data:' + v, label: () => NAMES[v], sel: () => state.data === v }))),
+    ...row(285, [['none', 'None'], ['radius', 'x\u2081\u00b2+x\u2082\u00b2'], ['product', 'x\u2081x\u2082'], ['rbf', 'RBF bump']]
+      .map(([v, l]) => ({ id: 'map:' + v, fs: 38, label: () => l, sel: () => state.map === v }))),
+    ...row(430, [
+      { id: 'lift', fs: 48, label: () => state.t > 0.5 ? 'Lower points' : 'Lift points' },
+      { id: 'plane', fs: 48, label: () => state.hide ? 'Show plane' : 'Hide plane' }]),
+    ...row(605, [{ id: 'turnL', label: () => 'Turn left' }, { id: 'turnR', label: () => 'Turn right' }], 30, 474),
+    { id: 'reset', x: 520, y: 605, w: 474, h: 120, fs: 48, label: () => 'Reset view' },
+    { id: 'gminus', x: 30, y: 778, w: 120, h: 120, fs: 56, label: () => '\u2212', rbf: true },
+    { id: 'gplus', x: 384, y: 778, w: 120, h: 120, fs: 56, label: () => '+', rbf: true },
+    { id: 'exit', x: 30, y: 965, w: 964, h: 120, fs: 48, label: () => 'Hold to exit VR' }
   ];
   let hoverBtn = null, exitHold = null, ctrlKey = '';
 
@@ -464,31 +475,34 @@ details p strong { color: var(--text); font-weight: 600; }
     g.fillStyle = '#e9c46a'; g.fillText('Lifted ' + (state.hide ? '?' : pct(liftFit.acc)) + '   (lift ' + Math.round(state.t * 100) + '%)', 300, 200);
     g.fillStyle = '#92a3b5'; g.font = '400 27px "Spline Sans", sans-serif';
     g.fillText('Grip: grab, twist wrist to turn    Both grips: turn and resize', 40, 268);
-    g.fillText('A / B: map    X / Y: data    Trigger: lift, or press a button', 40, 316);
+    g.fillText('A / B: map    X / Y: data    Trigger or pinch: lift, or press a panel button', 40, 316);
     panelTex.needsUpdate = true;
   }
 
   function rr(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
   function drawCtrlPanel() {
-    const g = cctx, rbf = state.map === 'rbf'; g.clearRect(0, 0, 1024, 768);
-    rr(g, 0, 0, 1024, 768, 28); g.fillStyle = 'rgba(23,33,48,0.94)'; g.fill();
-    g.fillStyle = '#92a3b5'; g.font = '500 30px "Spline Sans Mono", monospace'; g.fillText('CONTROLS', 30, 66);
+    const g = cctx, rbf = state.map === 'rbf'; g.clearRect(0, 0, PW, PH);
+    rr(g, 0, 0, PW, PH, 28); g.fillStyle = 'rgba(23,33,48,0.94)'; g.fill();
+    g.fillStyle = '#92a3b5'; g.font = '500 28px "Spline Sans Mono", monospace';
+    g.fillText('CONTROLS', 30, 60); g.fillText('DATA', 30, 98); g.fillText('FEATURE MAP', 30, 273);
+    g.fillText('VIEW', 30, 593); g.fillText('BUMP SHARPNESS (RBF MAP)', 30, 766);
     g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const b of BTNS) {
-      const off = b.rbf && !rbf, exit = b.id === 'exit', hot = hoverBtn === b.id && !off;
+      const off = b.rbf && !rbf, exit = b.id === 'exit', hot = hoverBtn === b.id && !off, sel = b.sel && b.sel();
       rr(g, b.x, b.y, b.w, b.h, 18);
-      g.fillStyle = exit ? (hot ? '#4d2a2c' : '#33232a') : hot ? '#e9c46a' : '#1e2a3b'; g.fill();
+      g.fillStyle = exit ? (hot ? '#4d2a2c' : '#33232a') : hot ? '#e9c46a' : sel ? '#2d3d52' : '#1e2a3b'; g.fill();
       if (exit && exitHold) { rr(g, b.x, b.y, b.w * exitHold.frac, b.h, 18); g.fillStyle = '#c0504d'; g.fill(); }
-      rr(g, b.x, b.y, b.w, b.h, 18); g.lineWidth = 3; g.strokeStyle = exit ? '#c0504d' : off ? '#243142' : '#2b3a4d'; g.stroke();
-      g.fillStyle = off ? '#4a5a6c' : hot && !exit ? '#1a1406' : '#e4ebf2';
-      g.font = '600 50px "Spline Sans", sans-serif'; g.fillText(b.label(), b.x + b.w / 2, b.y + b.h / 2 + 2);
+      rr(g, b.x, b.y, b.w, b.h, 18); g.lineWidth = sel ? 6 : 3;
+      g.strokeStyle = exit ? '#c0504d' : sel ? '#e9c46a' : off ? '#243142' : '#2b3a4d'; g.stroke();
+      g.fillStyle = off ? '#4a5a6c' : hot && !exit ? '#1a1406' : sel ? '#e9c46a' : '#e4ebf2';
+      g.font = '600 ' + (b.fs || 48) + 'px "Spline Sans", sans-serif'; g.fillText(b.label(), b.x + b.w / 2, b.y + b.h / 2 + 2);
     }
     g.fillStyle = rbf ? '#e9c46a' : '#4a5a6c'; g.font = '600 46px "Spline Sans", sans-serif';
-    g.fillText('\u03b3 ' + state.gamma.toFixed(1), 759, 338);
-    g.fillStyle = '#92a3b5'; g.font = '400 25px "Spline Sans", sans-serif';
-    g.fillText(rbf ? 'bump sharpness' : 'RBF map only', 759, 392);
-    g.fillText(rbf ? 'RBF map: point at the floor and pull the trigger to move the landmark' : '', 512, 476);
-    g.fillText('Hold the trigger on this button for one second', 512, 535);
+    g.fillText('\u03b3 ' + state.gamma.toFixed(1), 267, 840);
+    g.textAlign = 'left'; g.fillStyle = '#92a3b5'; g.font = '400 27px "Spline Sans", sans-serif';
+    if (rbf) { g.fillText('Point at the floor and pull', 540, 808); g.fillText('the trigger (or pinch) to', 540, 846); g.fillText('move the landmark.', 540, 884); }
+    else { g.fillText('Choose the RBF bump map', 540, 826); g.fillText('to use these controls.', 540, 864); }
+    g.textAlign = 'center'; g.fillText('Hold the trigger or pinch on this button for one second', 512, 938);
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     ctrlTex.needsUpdate = true;
   }
@@ -500,7 +514,7 @@ details p strong { color: var(--text); font-weight: 600; }
     landmark.visible = state.map === 'rbf'; landmark.position.x = state.lm[0]; landmark.position.z = state.lm[1];
     if (ui.visible) {
       drawVrPanel();
-      const k = [state.t > 0.5, state.map, state.hide, state.gamma].join('|');
+      const k = [state.t > 0.5, state.data, state.map, state.hide, state.gamma].join('|');
       if (k !== ctrlKey) { ctrlKey = k; drawCtrlPanel(); }
     }
   }
@@ -567,11 +581,11 @@ details p strong { color: var(--text); font-weight: 600; }
   const VR_HOME = { pos: [0, 0.8, -0.95], scale: 0.3 };
   function placeModel() {
     world.position.set(...VR_HOME.pos); world.rotation.set(0, 0, 0); world.scale.setScalar(VR_HOME.scale);
-    grabs.length = 0; grabRef = null;
+    grabs.length = 0; grabRef = null; turnAnim = null;
   }
   async function startVR() {
     let s;
-    try { s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] }); }
+    try { s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] }); }
     catch (e) { vrMsg.textContent = 'This page is embedded, and the browser blocks VR here. Open the standalone copy of this page on the headset.'; return; }
     try { renderer.xr.setReferenceSpaceType('local-floor'); await renderer.xr.setSession(s); }
     catch (e) { renderer.xr.setReferenceSpaceType('local'); await renderer.xr.setSession(s); }
@@ -596,7 +610,7 @@ details p strong { color: var(--text); font-weight: 600; }
     xrRay.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
     const p = xrRay.intersectObject(ctrlPanel, false)[0];
     if (p) {
-      const x = p.uv.x * 1024, y = (1 - p.uv.y) * 768;
+      const x = p.uv.x * PW, y = (1 - p.uv.y) * PH;
       const b = BTNS.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
       return { kind: b ? 'button' : 'panel', id: b ? b.id : null, dist: p.distance };
     }
@@ -606,7 +620,10 @@ details p strong { color: var(--text); font-weight: 600; }
   }
 
   function pressBtn(id) {
-    if (id === 'lift') toggleLift();
+    if (id.startsWith('data:')) setData(id.slice(5));
+    else if (id.startsWith('map:')) setMap(id.slice(4));
+    else if (id === 'turnL' || id === 'turnR') { turnAnim = { from: world.rotation.y, to: world.rotation.y + (id === 'turnL' ? 1 : -1) * Math.PI / 6, t0: performance.now() }; }
+    else if (id === 'lift') toggleLift();
     else if (id === 'plane') { state.hide = !state.hide; $('#hide').checked = state.hide; refit(); }
     else if (id === 'reset') placeModel();
     else if ((id === 'gminus' || id === 'gplus') && state.map === 'rbf') {
@@ -649,8 +666,15 @@ details p strong { color: var(--text); font-weight: 600; }
   function release(c) { const i = grabs.indexOf(c); if (i < 0) return; grabs.splice(i, 1); snapshot(); }
 
   const qd = new THREE.Quaternion(), fwd = new THREE.Vector3(), mid = new THREE.Vector3();
+  let turnAnim = null;
   function updateGrab() {
+    if (turnAnim) {
+      const k = reduce ? 1 : Math.min(1, (performance.now() - turnAnim.t0) / 350), e = 1 - Math.pow(1 - k, 3);
+      world.rotation.y = turnAnim.from + (turnAnim.to - turnAnim.from) * e;
+      if (k >= 1) turnAnim = null;
+    }
     const g = grabRef; if (!g) return;
+    turnAnim = null;
     if (g.mode === 1) {
       const c = grabs[0];
       qd.copy(c.userData.q).invert().premultiply(c.quaternion);      // rotation since last frame
